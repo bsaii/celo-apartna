@@ -1,0 +1,12 @@
+{
+  "extends": ["next/core-web-vitals", "plugin:prettier/recommended", "baseui"],
+  "rules": {
+    "indent": ["error", 2],
+    "linebreak-style": ["error", "unix"],
+    "semi": ["error", "always"],
+    "quotes": ["error", "single"],
+    "baseui/deprecated-theme-api": "warn",
+    "baseui/deprecated-component-api": "warn",
+    "baseui/no-deep-imports": "warn"
+  }
+}
