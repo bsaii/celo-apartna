@@ -31,10 +31,10 @@ const MainLayout: FunctionComponent<Props> = ({ children }) => {
             <Link href='/'>Home</Link>
           </NavigationItem>
           <NavigationItem>
-            <Link href='/'>Listings</Link>
+            <Link href='/listings'>Listings</Link>
           </NavigationItem>
           <NavigationItem>
-            <Link href='/'>Sell</Link>
+            <Link href='/list'>List</Link>
           </NavigationItem>
         </NavigationList>
         <NavigationList $align={ALIGN.right}>
@@ -43,7 +43,7 @@ const MainLayout: FunctionComponent<Props> = ({ children }) => {
           </NavigationItem>
         </NavigationList>
       </HeaderNavigation>
-      <div className={css({ padding: '.5rem' })}>{children}</div>
+      <div className={css({ padding: '1rem' })}>{children}</div>
     </>
   );
 };
