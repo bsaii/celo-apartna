@@ -332,6 +332,8 @@ contract Apartna {
             "Availability does not exist"
         );
         delete availability[_index];
+        // reduce the number of listed apartments
+        listedApartments--;
 
         emit deletedListedApartment();
     }
@@ -544,6 +546,7 @@ contract Apartna {
         // set the price to the original
         ListApartment storage apartment = listApartment[_index];
         apartment.price = (apartment.price / (100 - discountPercentage)) * 100;
+        discountPercentage = 0;
 
         emit endedDiscount();
     }

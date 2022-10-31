@@ -1,6 +1,6 @@
 import { ethers } from "hardhat";
 
-// Contract deployed to: 0x4E726ba2C7Cad69f54b789c266567af27aD56dCF
+// Contract deployed to: 0xdC57509CCd0171660BEB86BA1B6c00e252eF31F1
 
 async function main() {
   const Apartna = await ethers.getContractFactory("Apartna");
