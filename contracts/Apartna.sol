@@ -116,6 +116,14 @@ contract Apartna {
         _;
     }
 
+    // constructor to check eth value is more than 1
+    constructor() payable {
+        require(
+            msg.value > 1 ether,
+            "More than 1 ether initial funding is required"
+        );
+    }
+
     /**
      * @dev List an apartment
      * @param _name: apartment name
@@ -341,14 +349,14 @@ contract Apartna {
     /**
      * @dev Make an offer to purchase the apartment
      * @param _index: the desired apartment
+     * @param _amt: the amount of token
      * @param _message: message for the owner
      */
-    function makeOffer(uint256 _index, string memory _message)
-        public
-        payable
-        exists(_index)
-        _availability(_index)
-    {
+    function makeOffer(
+        uint256 _index,
+        uint256 _amt,
+        string memory _message
+    ) public payable exists(_index) _availability(_index) {
         ListApartment storage apartment = listApartment[_index];
         Availability storage available = availability[_index];
         // Check that availability is valid
@@ -357,22 +365,29 @@ contract Apartna {
         require(apartment.owner != msg.sender, "Owner can't make offer");
         // Check availability for purchase
         require(available.allowPurchase, "Not available for purchase");
-        // Check value of ETH
-        require(msg.value > 0, "Can't make an offer for 0 ETH");
+        // Check value of token
+        require(_amt > 0, "Can't make an offer with 0 token");
 
         _offersMade[offersMade] = OffersMade(
             _index,
             payable(msg.sender),
-            msg.value,
+            _amt,
             _message,
             false,
             false
         );
 
+        // Transfer tokens to contract
+        bool success = IERC20(cUsdTokenAddress).transferFrom(
+            msg.sender,
+            address(this),
+            _amt
+        );
+        require(success, "Failed to make offer");
+        // An offer was made
+        _madeOffer[offersMade] = true;
         // increment the number of offers
         offersMade++;
-        // An offer was made
-        _madeOffer[_index] = true;
 
         emit madeAnOffer();
     }
@@ -403,7 +418,7 @@ contract Apartna {
             apartment.owner,
             offerMade.amount
         );
-        require(received, "Offer not received");
+        require(received, "Failed to approve offer");
         // approved
         offerMade.approved = true;
         // transfer ownership
@@ -445,7 +460,7 @@ contract Apartna {
             offerMade.bidder,
             offerMade.amount
         );
-        require(success, "Couldn't decline offer");
+        require(success, "Failed to decline offer");
 
         emit declinedOffer();
     }
@@ -455,6 +470,7 @@ contract Apartna {
      * @param _offerId: the desired offer
      * @return amt - the amount of ETH
      * @return apartmentId = the apartment
+     * @return approved - approved the offer(bool)
      * @return bidder - the address of the bidder
      * @return declined - declined the offer(bool)
      * @return message - message from the bidder
@@ -466,6 +482,7 @@ contract Apartna {
         returns (
             uint256 amt,
             uint256 apartmentId,
+            bool approved,
             address bidder,
             bool declined,
             string memory message
@@ -475,6 +492,7 @@ contract Apartna {
         return (
             offerMade.amount,
             offerMade.apartmentId,
+            offerMade.approved,
             offerMade.bidder,
             offerMade.declined,
             offerMade.message
@@ -536,7 +554,7 @@ contract Apartna {
      * @dev End the discount
      * @param _index: the apartment price
      */
-    function endDisount(uint256 _index)
+    function endDiscount(uint256 _index)
         public
         _availability(_index)
         discounted(_index)
