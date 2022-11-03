@@ -17,10 +17,8 @@ contract Apartna {
         0x874069Fa1Eb16D44d622F2e0Ca25eeA172369bC1;
     // offers made
     uint256 offersMade = 0;
-    // discount percentage
-    uint256 discountPercentage = 0;
-    // nights spent
-    uint256 nightsSpent = 0;
+    // discounts
+    uint256 discounts = 0;
 
     struct ListApartment {
         address payable owner;
@@ -46,9 +44,10 @@ contract Apartna {
         address payable landlord;
         address payable tenant;
         uint256 nights;
+        uint256 nightsLeft;
         string name;
         string email;
-        uint256 number;
+        string number;
     }
 
     struct OffersMade {
@@ -81,6 +80,7 @@ contract Apartna {
     mapping(uint256 => bool) internal _exists;
     mapping(uint256 => bool) internal _madeOffer;
     mapping(uint256 => OffersMade) internal _offersMade;
+    mapping(uint256 => uint) discountPercent;
     mapping(uint256 => bool) internal _discounted;
 
     // Modifier to check that the caller is the owner of apartment
@@ -410,8 +410,8 @@ contract Apartna {
         // Allow only the owner
         require(apartment.owner == msg.sender, "Not the Owner");
         // Offer already approved
-        require(offerMade.approved, "Offer already approved");
-        // Check that offer was not declined
+        require(!offerMade.approved, "Offer already approved");
+        // Offer not declined
         require(!offerMade.declined, "Offer declined, can't approve");
         require(available.allowPurchase, "Not available for purchase");
         bool received = IERC20(cUsdTokenAddress).transfer(
@@ -447,7 +447,7 @@ contract Apartna {
         // Offer not approved
         require(!offerMade.approved, "Offer already approved, can't decline");
         // Offer already declined
-        require(offerMade.declined, "Offer already declined");
+        require(!offerMade.declined, "Offer already declined");
         // Allow only the owner
         require(
             listApartment[offerMade.apartmentId].owner == msg.sender,
@@ -509,7 +509,8 @@ contract Apartna {
 
     /**
      * @dev Discount the price of an apartment
-     * @param _index: the apartment to discount price, _discount: the percentage
+     * @param _index: the apartment to discount price
+     * @param _discount: the percentage
      */
     function discountPrice(uint256 _index, uint256 _discount)
         public
@@ -517,12 +518,17 @@ contract Apartna {
         _availability(_index)
         onlyOwner(_index)
     {
+        if (0 > _discount || _discount > 100) {
+            revert("Invalid discount percentage");
+        }
         ListApartment storage apartment = listApartment[_index];
-        discountPercentage = _discount;
+        discountPercent[_index] = _discount;
         apartment.price =
             apartment.price -
-            ((apartment.price / 100) * discountPercentage);
+            ((apartment.price / 100) * discountPercent[_index]);
         _discounted[_index] = true;
+        // increment then number of discounts
+        discounts++;
 
         emit discountedPrice();
     }
@@ -540,12 +546,14 @@ contract Apartna {
     {
         ListApartment storage apartment = listApartment[_index];
         // convert to original price
-        apartment.price = (apartment.price / (100 - discountPercentage)) * 100;
+        apartment.price =
+            (apartment.price / (100 - discountPercent[_index])) *
+            100;
         // discount the price with the new discount percentage
-        discountPercentage = _newDiscount;
+        discountPercent[_index] = _newDiscount;
         apartment.price =
             apartment.price -
-            ((apartment.price / 100) * discountPercentage);
+            ((apartment.price / 100) * discountPercent[_index]);
 
         emit updatedDiscountedPrice();
     }
@@ -563,18 +571,37 @@ contract Apartna {
         _discounted[_index] = false;
         // set the price to the original
         ListApartment storage apartment = listApartment[_index];
-        apartment.price = (apartment.price / (100 - discountPercentage)) * 100;
-        discountPercentage = 0;
+        apartment.price =
+            (apartment.price / (100 - discountPercent[_index])) *
+            100;
+        discountPercent[_index] = 0;
+        // decrement the number of discounts
+        discounts--;
 
         emit endedDiscount();
     }
 
     /**
      * @dev Returns the discount percentage
+     * @param _index: the id of the discount percentage
+     * @return _id - the apartment
      * @return _percent - the discount percentage
      */
-    function getDiscountPercent() public view returns (uint256 _percent) {
-        return discountPercentage;
+    function getDiscountPercent(uint256 _index)
+        public
+        view
+        discounted(_index)
+        returns (uint256 _id, uint256 _percent)
+    {
+        return (_index, discountPercent[_index]);
+    }
+
+    /**
+     * @dev Returns the number of discounts
+     * @return _discounts
+     */
+    function numberOfDiscounts() public view returns (uint256 _discounts) {
+        return discounts;
     }
 
     /**
@@ -590,7 +617,7 @@ contract Apartna {
         uint256 _nights,
         string memory _name,
         string memory _email,
-        uint256 _number
+        string memory _number
     ) public payable _availability(_index) exists(_index) {
         ListApartment storage apartment = listApartment[_index];
         Availability storage available = availability[_index];
@@ -599,12 +626,15 @@ contract Apartna {
         require(available.allowRent, "This apartment is not available");
         // Check ownership
         require(msg.sender != apartment.owner, "Owner cannot rent");
+        // Check _nights is valid
+        require(_nights > 0, "Can't rent for 0 nights");
 
         rentApartment[rentedApartments] = RentApartment({
             apartmentId: _index,
             landlord: apartment.owner,
             tenant: payable(msg.sender),
             nights: _nights,
+            nightsLeft: 0,
             name: _name,
             email: _email,
             number: _number
@@ -635,21 +665,34 @@ contract Apartna {
         RentApartment storage rent = rentApartment[_index];
         Availability storage available = availability[rent.apartmentId];
         require(available.rented, "Not rented");
-        nightsSpent = rent.nights - _nightsSpent;
+        rent.nightsLeft = rent.nights - _nightsSpent;
 
         emit NightsLeft();
     }
 
     /**
-     * @dev Returns the number of nights left for tenant
+     * @dev Returns the number of rented apartments
+     * @return _rentedApartments
      */
-    function getNightsLeft() public view returns (uint) {
-        return nightsSpent;
+    function numberOfRentedApartments()
+        public
+        view
+        returns (uint256 _rentedApartments)
+    {
+        return rentedApartments;
     }
 
     /**
      * @dev Return a rented apartment details
      * @param _index: the desired rented apartment
+     * @return apartmentId
+     * @return email
+     * @return landlord
+     * @return name
+     * @return nights
+     * @return nightsLeft
+     * @return number
+     * @return tenant
      */
     function getRentedApartment(uint256 _index)
         public
@@ -660,7 +703,8 @@ contract Apartna {
             address landlord,
             string memory name,
             uint256 nights,
-            uint256 number,
+            uint256 nightsLeft,
+            string memory number,
             address tenant
         )
     {
@@ -671,6 +715,7 @@ contract Apartna {
             rent.landlord,
             rent.name,
             rent.nights,
+            rent.nightsLeft,
             rent.number,
             rent.tenant
         );
@@ -692,15 +737,17 @@ contract Apartna {
         available.allowRent = true;
         available.rented = false;
         // transfer tokens if there are nights left with 15% charges
-        if (nightsSpent > 0) {
+        if (rent.nightsLeft > 0) {
             bool success = IERC20(cUsdTokenAddress).transferFrom(
                 payable(msg.sender),
                 rent.tenant,
-                ((nightsSpent * apartment.price) -
-                    (((nightsSpent * apartment.price) / 100) * 15))
+                ((rent.nightsLeft * apartment.price) -
+                    (((rent.nightsLeft * apartment.price) / 100) * 15))
             );
             require(success, "Failed to terminate");
         }
+        // Nights left
+        rent.nightsLeft = 0;
 
         emit terminatedRent();
     }
